@@ -1,3 +1,5 @@
+import puppeteer from 'puppeteer';
+
 export default async function handler(req, res) {
   const { url } = req.query;
 
@@ -5,74 +7,67 @@ export default async function handler(req, res) {
     return res.status(400).json({ success: false, message: "Falta el parámetro 'url'" });
   }
 
+  let browser;
   try {
-    // 1️⃣ Obtener HTML inicial de la página
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-      }
+    // Lanzar Puppeteer en modo headless
+    browser = await puppeteer.launch({
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      headless: true
     });
+    const page = await browser.newPage();
 
-    if (!response.ok) {
-      return res.status(200).json({
-        success: false,
-        message: "La página respondió con error",
-        status: response.status
-      });
-    }
+    // Configurar User-Agent
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+    );
 
-    let html = await response.text();
+    // 1️⃣ Ir a la página
+    await page.goto(url, { waitUntil: 'networkidle2' });
 
-    // 2️⃣ Verificar si existe el botón "Activar"
-    const botonExiste = html.includes('class="button-activar"') && html.includes('type="submit"');
+    // 2️⃣ Verificar si existe el botón
+    const boton = await page.$('form#activar-form button.button-activar');
+    const botonExiste = boton !== null;
     let botonPresionado = false;
-    let enlaceBoxVisible = false; // Solo se puede detectar después de presionar el botón
+    let enlaceBoxVisible = false;
+    let enlaceUrl = null;
 
     if (botonExiste) {
-      // Intentamos enviar un POST al action del form (simulación del click)
-      const actionMatch = html.match(/<form[^>]*id=["']activar-form["'][^>]*action=["']([^"']+)["']/i);
-      let actionUrl = url; // por defecto, el mismo URL
-      if (actionMatch && actionMatch[1]) {
-        actionUrl = actionMatch[1].startsWith("http") ? actionMatch[1] : new URL(actionMatch[1], url).href;
-      }
+      // 3️⃣ Presionar el botón
+      await boton.click();
+      botonPresionado = true;
 
+      // 4️⃣ Esperar a que aparezca el div "enlace-box"
       try {
-        const submitResponse = await fetch(actionUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
-          },
-          body: "activar=Activar"
-        });
-        botonPresionado = submitResponse.ok;
+        await page.waitForSelector('div.enlace-box', { timeout: 3000 });
+        enlaceBoxVisible = true;
 
-        // 3️⃣ Después del submit, intentar detectar el div "enlace-box"
-        if (botonPresionado) {
-          const postHtml = await submitResponse.text?.(); // Si la respuesta tiene HTML
-          if (postHtml && postHtml.includes('class="enlace-box"')) {
-            enlaceBoxVisible = true;
-          }
+        // 5️⃣ Extraer la URL del input dentro de enlace-box
+        const inputHandle = await page.$('div.enlace-box input#enlace');
+        if (inputHandle) {
+          enlaceUrl = await page.evaluate(input => input.value, inputHandle);
         }
-      } catch (err) {
-        botonPresionado = false;
+      } catch {
         enlaceBoxVisible = false;
+        enlaceUrl = null;
       }
     }
 
-    // 4️⃣ Devolver JSON final
+    // 6️⃣ Devolver resultado en JSON
     res.status(200).json({
       success: true,
       botonExiste,
       botonPresionado,
-      enlaceBoxVisible
+      enlaceBoxVisible,
+      enlaceUrl
     });
 
   } catch (err) {
-    res.status(200).json({
+    res.status(500).json({
       success: false,
-      message: "Error al intentar emular la página",
+      message: "Error al ejecutar Puppeteer",
       error: err.message
     });
+  } finally {
+    if (browser) await browser.close();
   }
 }
