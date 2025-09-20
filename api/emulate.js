@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1️⃣ Obtener HTML de la página
+    // 1️⃣ Obtener HTML inicial de la página
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
@@ -23,14 +23,15 @@ export default async function handler(req, res) {
 
     let html = await response.text();
 
-    // 2️⃣ Verificar si existe el botón Activar
+    // 2️⃣ Verificar si existe el botón "Activar"
     const botonExiste = html.includes('class="button-activar"') && html.includes('type="submit"');
     let botonPresionado = false;
+    let enlaceBoxVisible = false; // Solo se puede detectar después de presionar el botón
 
     if (botonExiste) {
-      // Intentamos enviar un POST al action del form
+      // Intentamos enviar un POST al action del form (simulación del click)
       const actionMatch = html.match(/<form[^>]*id=["']activar-form["'][^>]*action=["']([^"']+)["']/i);
-      let actionUrl = url; // por defecto mismo URL
+      let actionUrl = url; // por defecto, el mismo URL
       if (actionMatch && actionMatch[1]) {
         actionUrl = actionMatch[1].startsWith("http") ? actionMatch[1] : new URL(actionMatch[1], url).href;
       }
@@ -45,15 +46,21 @@ export default async function handler(req, res) {
           body: "activar=Activar"
         });
         botonPresionado = submitResponse.ok;
+
+        // 3️⃣ Después del submit, intentar detectar el div "enlace-box"
+        if (botonPresionado) {
+          const postHtml = await submitResponse.text?.(); // Si la respuesta tiene HTML
+          if (postHtml && postHtml.includes('class="enlace-box"')) {
+            enlaceBoxVisible = true;
+          }
+        }
       } catch (err) {
         botonPresionado = false;
+        enlaceBoxVisible = false;
       }
     }
 
-    // 3️⃣ Verificar si existe el div "enlace-box"
-    const enlaceBoxVisible = html.includes('class="enlace-box"');
-
-    // 4️⃣ Devolver JSON
+    // 4️⃣ Devolver JSON final
     res.status(200).json({
       success: true,
       botonExiste,
