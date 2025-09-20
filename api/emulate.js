@@ -23,21 +23,18 @@ export default async function handler(req, res) {
 
     let html = await response.text();
 
-    // 2️⃣ Buscar el botón en el HTML
+    // 2️⃣ Verificar si existe el botón Activar
     const botonExiste = html.includes('class="button-activar"') && html.includes('type="submit"');
-
     let botonPresionado = false;
 
-    // 3️⃣ Simular "press" si el botón existe
     if (botonExiste) {
-      // Intentamos enviar un POST al mismo endpoint del form (si tiene action)
+      // Intentamos enviar un POST al action del form
       const actionMatch = html.match(/<form[^>]*id=["']activar-form["'][^>]*action=["']([^"']+)["']/i);
-      let actionUrl = url; // Por defecto el mismo URL
+      let actionUrl = url; // por defecto mismo URL
       if (actionMatch && actionMatch[1]) {
         actionUrl = actionMatch[1].startsWith("http") ? actionMatch[1] : new URL(actionMatch[1], url).href;
       }
 
-      // Simulamos el submit del form
       try {
         const submitResponse = await fetch(actionUrl, {
           method: "POST",
@@ -53,10 +50,15 @@ export default async function handler(req, res) {
       }
     }
 
+    // 3️⃣ Verificar si existe el div "enlace-box"
+    const enlaceBoxVisible = html.includes('class="enlace-box"');
+
+    // 4️⃣ Devolver JSON
     res.status(200).json({
       success: true,
       botonExiste,
-      botonPresionado
+      botonPresionado,
+      enlaceBoxVisible
     });
 
   } catch (err) {
